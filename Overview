@@ -1,0 +1,56 @@
+Here we process initial data using script LoadingProcessing.r
+Then MergeHarmonyIntegration.r
+Run Sierra with ....
+Using peaks.seurat and genes.seurat, run dWUI.r script
+Using dWUI summary epithelials run the following:
+
+Step 1: Use the dWUI_summary_epithelial_HPVneg_tandem_only.csv to make:
+shortening_genes.txt (genes with dWUI < -0.15) done
+lengthening_genes.txt (genes with dWUI > 0.15) done 
+place these in data folder done
+
+Step 2: Then generate pPAS adn dPAS BED files: (update input csv file)
+make_shortening_bed.py: read the new detailed_peaks.csv file,
+outputs Choi_epi_target_genes_short_utr_pas.bed and Choi_epi_target_genes_long_utr_pas
+
+run make_lost_region_bed.py to compute lost regions
+make_lengthening_bed.py done
+
+Step 3: Generate lost/gained region BED files:
+make_lost_region_bed.py done
+make_ame_control_gained.py done
+
+Step 4: Generate region length distribution
+tandem_plot_region_lengths.py (input are the lost gained bed files from step 3) done
+
+Step 5: Generate PAS windows for eCLIP
+tandem_make_pas_windows.py (creates 61 bp window around pPAS and dPAS), takes the input as files from step 2 done
+
+Step 6: eCLIP intersection
+eclip_download.py to get the manifest.txt done
+tandem_eclip_intersect.py (intersects PAS windows with eCLIP peaks), input is PAS window BEDs from Step 5 done
+
+Step 7: AME BED files and motif analysis
+tandem_make_ame_beds.py (makes primary lost region, upstream control, and gained region)
+on server, use bedtools getfasta to extract sequences:
+  bedtools getfasta -fi /projects/academic/jbard/references/refdata-gex-GRCh38-2024-A/fasta/genome.fa -bed ame_primary_lost_regions.bed -s -name -fo ame_primary.fasta done
+  bedtools getfasta -fi /projects/academic/jbard/references/refdata-gex-GRCh38-2024-A/fasta/genome.fa -bed ame_control_retained_regions.bed -s -name -fo ame_control_retained.fasta 
+  bedtools getfasta -fi /projects/academic/jbard/references/refdata-gex-GRCh38-2024-A/fasta/genome.fa -bed ame_control_gained_regions.bed -s -name -fo ame_gained.fasta
+
+run AME CISBP RNA DNA encoded primary: ame_primary.fasta, control: ame_gained.fasta we want to compare our shortening genes lost 3'utr sequence vs those that lengthened
+
+Step 8: miRNA TargetScan analysis
+tandem_miRNA_analysis.py miRNA binding site loss in lost 3'utr regions
+input is lost regions bed from step 3, targetscan MSA file (see script for getting MSA file), miR family file
+
+Step 9: GO/pathway enrichment
+Use Shiny Go .85
+
+Step 10: Survival/ml analysis
+combined_survival_dpdui.py with new updated gene lsits
+combined_survival_dpdui_random.py compares with randomly selected genes
+combined_survival_dpdui_labeltest.py does the label permutation to see if dPDUI is prognostic
+
+Step 11: Additional figures
+tandem_plot_region_lengths.py
+tandem_mirna_analysis.py
