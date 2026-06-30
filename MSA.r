@@ -1,10 +1,9 @@
 # 3'UTR Multi-species MSA for TargetScan — Human / Mouse / Chimpanzee
-#
 # Filter: human sequence required + at least one of mouse or chimp.
 # Output: tab-delimited TargetScan MSA file (gene, taxon_id, aligned_seq).
-#
 
-# ── Libraries ──────────────────────────────────────────────────────────────────
+
+#Libraries
 suppressPackageStartupMessages({
   library(biomaRt)
   library(Biostrings)
@@ -19,10 +18,10 @@ suppressPackageStartupMessages({
   library(Rsamtools)
 })
 
-# ── Parameters ─────────────────────────────────────────────────────────────────
+#Parameters
 MAX_UTR_LEN <- 10000   # skip genes whose longest species sequence exceeds this
 
-# ── Input / output paths ───────────────────────────────────────────────────────
+# Input/output paths 
 HUMAN_dPAS_BED <- "~/Downloads/New_Analysis_dWUI/Choi_epi_target_genes_long_utr_pas.bed"
 HUMAN_pPAS_BED <- "~/Downloads/New_Analysis_dWUI/Choi_epi_target_genes_short_utr_pas.bed"
 OUTPUT_MSA_FILE <- "~/Downloads/New_Analysis_dWUI/3UTR_epi_choihpvneg_MSA_for_TargetScan.txt"
@@ -35,7 +34,7 @@ HUMAN_FASTA_PATH   <- "/Volumes/LaCie/lab/Downloads/grch38_ncbi_dataset/ncbi_dat
 MOUSE_FASTA_PATH   <- "/Volumes/LaCie/lab/Downloads/mm10_ncbi_dataset/ncbi_dataset/data/GCF_000001635.20/GCF_000001635.20_GRCm38_genomic.fna"
 CHIMP_FASTA_PATH   <- "~/Downloads/miRNA/chimp_ncbi_dataset/ncbi_dataset/data/GCF_002880755.1/GCF_002880755.1_Clint_PTRv2_genomic.fna"
 
-# ── 1. Read BED files and build APA 3'UTR ranges ──────────────────────────────
+#Step 1. Read BED files and build APA 3'UTR ranges 
 read_pas_bed <- function(path, pas_type) {
   readr::read_delim(path,
     col_names = c("chr", "start", "end", "name", "score", "strand"),
@@ -52,8 +51,6 @@ df_pPAS    <- read_pas_bed(HUMAN_pPAS_BED, "pPAS")
 
 # Collapse multiple PAS peaks per gene to one representative per gene:
 # use the most distal dPAS and most proximal pPAS to define the APA window.
-# Without this, inner_join creates all pairwise combos and the max span
-# across combos can be 10-100x larger than the true APA region.
 df_dPAS <- df_dPAS %>%
   group_by(chr, Gene, strand) %>%
   summarise(end.dPAS = if (strand[1] == "+") max(end.dPAS) else min(end.dPAS),
@@ -65,10 +62,7 @@ df_pPAS <- df_pPAS %>%
 
 df_combined <- inner_join(df_dPAS, df_pPAS, by = c("chr", "Gene", "strand"))
 
-# ── 2. UTRome: get spliced exons within each APA window ───────────────────────
-# The pPAS→dPAS genomic span often contains introns (e.g. CROT: 39kb genomic,
-# ~3.8kb exonic). The UTRome GTF has the exon structure; we collect all UTRome
-# exons overlapping [pPAS+1, dPAS], merge them, and concatenate for mRNA sequence.
+# Step 2. UTRome
 
 message("Importing UTRome GTF...")
 utrome_exons <- import(UTR_GTF_PATH)
@@ -117,13 +111,13 @@ apa_exon_list <- mapply(
 apa_exon_list <- Filter(Negate(is.null), apa_exon_list)
 message("Genes with UTRome APA exons: ", length(apa_exon_list))
 
-# Export exon-level BED — use this for mouse/chimp LiftOver for best accuracy
+# Export exon-level BED 
 apa_exon_gr <- unlist(GRangesList(apa_exon_list), use.names = FALSE)
 export(apa_exon_gr, "human_apa_exons_for_liftover.bed")
 message("Exon-level BED saved: human_apa_exons_for_liftover.bed")
 message("Tip: re-run LiftOver on this BED (not gene-level) for exact mouse/chimp exon coords")
 
-# ── 3. BioMart: orthologs for mouse and chimp ─────────────────────────────────
+#Step 3. BioMart: orthologs for mouse and chimp 
 target_genes <- unique(names(apa_exon_list))
 target_genes <- target_genes[nzchar(target_genes) & !is.na(target_genes)]
 
@@ -160,18 +154,15 @@ genes_keep    <- unique(orthologs$Human)
 apa_exon_list <- apa_exon_list[names(apa_exon_list) %in% genes_keep]
 message("Genes after ortholog filter: ", length(apa_exon_list))
 
-# ── 4. Helpers: open indexed FASTA and harmonize seqlevels ────────────────────
+#Step 4. Helpers: open indexed FASTA and harmonize seqlevels
 open_fasta <- function(path) {
   fa <- FaFile(path); open(fa); fa
 }
 
-# scanFaIndex returns only bare accessions (CM000663.2, NC_000067.6) — no
-# descriptions. For human GCA assembly the accessions are GenBank CM series,
-# which UCSC maps to RefSeq NC series — completely different. Hard-code the
-# GRCh38 GCA map. Mouse/chimp are GCF (NC_ series) so UCSC lookup works.
+
 get_chr_accession_map <- function(ucsc_genome) {
   switch(ucsc_genome,
-    # GCA_000001405.15 — GenBank CM accessions (not NC)
+    # GCA_000001405.15: GenBank CM accessions
     hg38 = c(
       chr1  = "CM000663.2", chr2  = "CM000664.1", chr3  = "CM000665.1",
       chr4  = "CM000666.1", chr5  = "CM000667.1", chr6  = "CM000668.1",
@@ -183,7 +174,7 @@ get_chr_accession_map <- function(ucsc_genome) {
       chr22 = "CM000684.1", chrX  = "CM000685.1", chrY  = "CM000686.1",
       chrM  = "J01415.2"
     ),
-    # GCF_000001635.20 — mm10 / GRCm38
+    # GCF_000001635.20:  mm10 / GRCm38
     mm10 = c(
       chr1  = "NC_000067.6", chr2  = "NC_000068.7", chr3  = "NC_000069.6",
       chr4  = "NC_000070.6", chr5  = "NC_000071.6", chr6  = "NC_000072.6",
@@ -194,7 +185,7 @@ get_chr_accession_map <- function(ucsc_genome) {
       chr19 = "NC_000085.6", chrX  = "NC_000086.7", chrY  = "NC_000087.7",
       chrM  = "NC_005089.1"
     ),
-    # GCF_002880755.1 — Clint_PTRv2 / panTro5
+    # GCF_002880755.1: Clint_PTRv2/panTro5
     panTro5 = c(
       chr1  = "NC_036879.1", chr2A = "NC_036880.1", chr2B = "NC_036881.1",
       chr3  = "NC_036882.1", chr4  = "NC_036883.1", chr5  = "NC_036884.1",
@@ -223,7 +214,7 @@ harmonize_bed <- function(bed_gr, fa, species, ucsc_genome) {
     stop(species, ": no chr names matched FASTA accessions. ",
          "Run head(seqlevels(scanFaIndex(fa)), 5) to inspect FASTA accessions.")
 
-  # Use the versioned accession that's actually in the FASTA
+  # Use the versioned accession in the FASTA
   target_acc <- fa_accessions[match(chr_map_unver[present], fa_acc_unver)]
   bed_gr     <- keepSeqlevels(bed_gr, present, pruning.mode = "coarse")
   seqlevels(bed_gr) <- target_acc
@@ -239,7 +230,7 @@ extract_seqs <- function(bed_gr, fa, species) {
   seqs
 }
 
-# ── 5. Human sequences — UTRome exon extraction ───────────────────────────────
+# Step 5. Human sequences: UTRome exon extraction 
 human_fa <- open_fasta(HUMAN_FASTA_PATH)
 
 # Pre-build the chr → versioned FASTA accession lookup once
@@ -251,7 +242,7 @@ chr_unver    <- sub("\\..*", "", chr_to_acc)
 human_utr <- DNAStringSet(sapply(names(apa_exon_list), function(g) {
   exs <- apa_exon_list[[g]]
 
-  # Map UTRome chr names → FASTA accessions
+  # Map UTRome chr names to FASTA accessions
   lvls    <- seqlevels(exs)
   new_acc <- fa_acc_all[match(chr_unver[lvls], fa_acc_unver)]
   if (any(is.na(new_acc))) {
@@ -271,19 +262,17 @@ human_utr <- DNAStringSet(sapply(names(apa_exon_list), function(g) {
 human_utr <- human_utr[!is.na(as.character(human_utr)) & nchar(as.character(human_utr)) > 0]
 message("Human sequences extracted: ", length(human_utr))
 
-# ── 6. Mouse sequences ────────────────────────────────────────────────────────
-# Using gene-level liftover BED. For genes with intronic APA regions (e.g. CROT),
-# re-run LiftOver on human_apa_exons_for_liftover.bed and update MOUSE_ORTHOLOG_BED.
+# Step 6. Mouse sequences 
 mouse_fa     <- open_fasta(MOUSE_FASTA_PATH)
 mouse_bed_gr <- harmonize_bed(import(MOUSE_ORTHOLOG_BED), mouse_fa, "Mouse", "mm10")
 mouse_utr    <- extract_seqs(mouse_bed_gr, mouse_fa, "Mouse")
 
-# ── 7. Chimp sequences ────────────────────────────────────────────────────────
+#Step 7. Chimp sequences 
 chimp_fa     <- open_fasta(CHIMP_FASTA_PATH)
 chimp_bed_gr <- harmonize_bed(import(CHIMP_ORTHOLOG_BED), chimp_fa, "Chimp", "panTro5")
 chimp_utr    <- extract_seqs(chimp_bed_gr, chimp_fa, "Chimp")
 
-# ── 8. Filter: keep genes with human + ≥1 other species ──────────────────────
+# Step 8. Filter: keep genes with human + ≥1 other species
 human_genes <- names(human_utr)
 genes_pass  <- human_genes[human_genes %in% names(mouse_utr) |
                             human_genes %in% names(chimp_utr)]
@@ -293,15 +282,14 @@ human_utr <- human_utr[genes_pass]
 mouse_utr <- mouse_utr[intersect(genes_pass, names(mouse_utr))]
 chimp_utr <- chimp_utr[intersect(genes_pass, names(chimp_utr))]
 
-# ── 9. MSA per gene ───────────────────────────────────────────────────────────
+# Step 9. MSA per gene 
 species_id_map <- c(Human = 9606L, Mouse = 10090L, Chimp = 9598L)
 
 result_list <- lapply(genes_pass, function(g) {
   human_seq <- as.character(human_utr[[g]])
   human_len <- nchar(human_seq)
 
-  # Filter on human length only — mouse/chimp syntenic regions can be larger
-  # due to species-specific insertions; the aligner handles length differences.
+  # Filter on human length only
   if (human_len > MAX_UTR_LEN) {
     message("Skipping ", g, " (human ", human_len, " bp > MAX_UTR_LEN)")
     return(NULL)
@@ -326,7 +314,7 @@ result_list <- Filter(Negate(is.null), result_list)
 final_df    <- bind_rows(result_list)
 message("MSA complete: ", nrow(final_df), " genes")
 
-# ── 10. Reshape to TargetScan format ─────────────────────────────────────────
+#Step 10. Reshape to TargetScan format
 species_cols <- intersect(c("Human", "Mouse", "Chimp"), colnames(final_df))
 
 targetscan_long <- final_df %>%
@@ -337,7 +325,7 @@ targetscan_long <- final_df %>%
   mutate(Species_ID = species_id_map[Species]) %>%
   dplyr::select(Gene_Symbol = Gene, Species_ID, Aligned_Sequence)
 
-# Sanity check: no all-gap sequences
+# Check
 all_gap <- targetscan_long %>% filter(grepl("^-+$", Aligned_Sequence))
 if (nrow(all_gap) > 0)
   warning(nrow(all_gap), " all-gap sequences found — review alignment quality.")
