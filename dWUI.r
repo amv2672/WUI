@@ -7,13 +7,11 @@ library(tidyr)
 library(ggplot2)
 library(tibble)
 
-# ─────────────────────────────────────────────────────────────────────────────
+
 # CONFIGURATION
-# ─────────────────────────────────────────────────────────────────────────────
 PAS_FILE   <- "hg38.PAS.main.tsv"   # path to PolyASite TEZ reference
 
-# Cell types to process: names = celltype_harmonyclusters values in Seurat,
-# values = suffix used in output filenames
+# Cell types to process: names = celltype_harmonyclusters values in Seurat
 CELL_TYPE_MAP <- c(
   "Epithelial_cells"  = "epithelial",
   "Fibroblast"        = "Fibroblast",
@@ -30,7 +28,7 @@ MIN_TOTAL_COUNTS   <- 0
 MIN_CELLS_PER_PEAK <- 10
 
 
-# ── Step 1: Subset overlapping cells ─────────────────────────────────────────
+#Step 1: Subset overlapping cells
 
 common_cells <- intersect(colnames(genes.seurat), colnames(peaks.seurat))
 genes.subset <- genes.seurat[, common_cells]
@@ -38,8 +36,7 @@ peaks.seurat.full <- peaks.seurat[, common_cells]
 genes.subset <- JoinLayers(genes.subset)
 
 
-# ── Step 2: Filter genes by expression ───────────────────────────────────────
-
+#  Step 2: Filter genes by expression
 gene_counts_mat <- genes.subset[["RNA"]]$counts
 total_gene_reads <- rowSums(gene_counts_mat)
 cells_per_gene   <- rowSums(gene_counts_mat > 0)
@@ -48,7 +45,7 @@ active_genes <- names(total_gene_reads[total_gene_reads >= 100 & cells_per_gene 
 message("Active genes retained: ", length(active_genes))
 
 
-# ── Step 3: Select UTR3 peaks ─────────────────────────────────────────────────
+#Step 3: Select UTR3 peaks 
 
 utr3_peak_list <- map(active_genes, function(gene) {
   tryCatch({
@@ -73,11 +70,10 @@ message("Genes with >=2 UTR3 peaks (before TEZ filter): ",
         n_distinct(utr3_peak_df$Gene))
 
 
-# ── Step 3b: Filter peaks to TEZ using hg38.PAS.main.tsv ─────────────────────
+# Step 3b: Filter peaks to TEZ using hg38.PAS.main.tsv 
 # The TEZ (Terminal Exon Zone) is the 3'-most genomic region of the terminal
 # exon. PAS sites within the TEZ represent true tandem APA events within the
-# same 3'UTR. Filtering to TEZ excludes alternative last exon (ALE) events
-# where peaks from different exons were incorrectly grouped together.
+# same 3'UTR. This comes from PolyA_DB v4.
 
 message("Loading TEZ reference: ", PAS_FILE)
 pas <- read.table(PAS_FILE, sep = "\t", header = TRUE,
@@ -129,7 +125,7 @@ message("Genes with >=2 peaks inside TEZ: ",
         n_distinct(utr3_peak_df$Gene))
 
 
-# ── Step 4: Assign weights ────────────────────────────────────────────────────
+#  Step 4: Assign weights
 
 master_weights <- utr3_peak_df %>%
   mutate(Peak_Sort = if_else(Strand %in% c("+", "1"), Start, -End)) %>%
@@ -146,7 +142,7 @@ write.csv(master_weights, "Master_Peak_Weights_UTR3_tandem_only_Choi_HPVneg_all.
 message("Master weights saved: ", nrow(master_weights), " peak-gene entries")
 
 
-# ── Steps 5–7: Loop through each cell type ───────────────────────────────────
+# Steps 5–7: Loop through each cell type 
 
 genes_to_run <- unique(master_weights$Gene)
 n_genes      <- length(genes_to_run)
@@ -159,7 +155,7 @@ for (ct_key in names(CELL_TYPE_MAP)) {
   message("Processing cell type: ", ct_key, "  (label: ", ct_label, ")")
   message(strrep("=", 60))
 
-  # ── Step 5: Subset to this cell type ──────────────────────────────────────
+  # Step 5: Subset to this cell type 
 
   peaks.subset <- tryCatch(
     subset(peaks.seurat.full, subset = celltype_harmonyclusters == ct_key),
@@ -225,7 +221,7 @@ for (ct_key in names(CELL_TYPE_MAP)) {
       next
     }
 
-    # Filter conditions by minimum cell support
+    # Filter conditions by minimum cell 
     peak_cells_ok <- sapply(colnames(expr_mat), function(cond) {
       counts <- rel_expr_df %>%
         dplyr::filter(Peak %in% g_peaks & Identity == cond) %>%
@@ -237,7 +233,7 @@ for (ct_key in names(CELL_TYPE_MAP)) {
 
     expr_mat <- expr_mat[, peak_cells_ok, drop = FALSE]
 
-    # Proportions + WUI
+    # Proportions & WUI
     peak_props <- sweep(expr_mat, 2, colSums(expr_mat), "/")
     wui        <- colSums(peak_props * w)
 
@@ -266,7 +262,7 @@ for (ct_key in names(CELL_TYPE_MAP)) {
     next
   }
 
-  # ── Step 6: Build final detailed table ──────────────────────────────────────
+  # Step 6: Build final detailed table 
 
   final_df <- bind_rows(final_results)
 
@@ -299,7 +295,7 @@ for (ct_key in names(CELL_TYPE_MAP)) {
   final_df <- final_df %>%
     dplyr::left_join(peak_numbers, by = c("Gene", "Peak", "Peak_Sort"))
 
-  # ── Step 7: Save outputs ─────────────────────────────────────────────────────
+  #  Step 7: Save outputs 
 
   detailed_file <- paste0("dWUI_detailed_peaks_", ct_label, "_HPVneg_tandem_only.csv")
   summary_file  <- paste0("dWUI_summary_",        ct_label, "_HPVneg_tandem_only.csv")
